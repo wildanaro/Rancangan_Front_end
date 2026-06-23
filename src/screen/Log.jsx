@@ -110,12 +110,16 @@ const fetchProducts = async () => {
 
   // ── HELPER GAMBAR ──
   // Pakai gambar dari storage Laravel, kalau kosong pakai fallback lokal
-  const getImageSource = (item) => {
-    if (item.image) {
-      return { uri: `${BASE_URL}${item.image}` };
-    }
-    return fallbackImages[item.id] || fallbackImages[1];
-  };
+const getImageSource = (item) => {
+  if (item.image) {
+    return {
+      uri: item.image.startsWith('http')
+        ? item.image
+        : `http://10.89.16.228:8000/storage/${item.image}`
+    };
+  }
+  return fallbackImages[item.id] || fallbackImages[1];
+};
 
   const getDiscountedPrice = (item) => {
     if (!item.discount) return Number(item.price);

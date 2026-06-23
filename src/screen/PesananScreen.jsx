@@ -128,10 +128,13 @@ export default function PesananScreen({ navigation }) {
     }
   };
 
-  const getImageSource = (image) => {
-    if (image) return { uri: `${BASE_URL}${image}` };
-    return FALLBACK;
-  };
+const getImageSource = (image) => {
+  if (!image) return FALLBACK;
+  if (typeof image === 'string') {
+    return { uri: image.startsWith('http') ? image : `http://10.89.16.228:8000/storage/${image}` };
+  }
+  return image; // fallback jika require()
+};
 
   const tabs = [
     { key: 'all',       label: 'Semua' },
