@@ -11,27 +11,25 @@ import {
   Modal, TextInput
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useCart } from '../../CartContext'; // Path diperbaiki
-import * as ImagePicker from 'expo-image-picker'; // Import Image Picker
+import api from '../Service/api';
+import * as SecureStore from 'expo-secure-store';
+import * as ImagePicker from 'expo-image-picker';
 
-import ConfirmationModal from './ConfirmationProduk';  // Path diperbaiki
+import ConfirmationModal from './ConfirmationProduk';
 
 const { width, height } = Dimensions.get("window");
 
 function DetailProduk1({ route, navigation }) {
   const { product } = route.params;
-  const { addToCart } = useCart(); // Ambil fungsi addToCart dari context
 
-  // State untuk mengontrol visibilitas modal
   const [isModalVisible, setModalVisible] = useState(false);
 
-  // Fungsi ini ditambahkan untuk konsistensi, meskipun produk ini tidak punya diskon
   const getDiscountedPrice = (item) => {
     if (!item.discount) return item.price;
     const discountAmount = item.price * (item.discount / 100);
     return item.price - discountAmount;
   };
-  // Data statis untuk rating dan ulasan produk
+
   const productRating = {
     average: 4.8,
     count: 152,
@@ -43,19 +41,15 @@ function DetailProduk1({ route, navigation }) {
     ]
   };
 
-  // State untuk membedakan aksi (tambah ke keranjang atau beli sekarang)
   const [modalAction, setModalAction] = useState(null);
-
-  // State untuk fitur ulasan pengguna
   const [allReviews, setAllReviews] = useState(productRating.reviews);
   const [isReviewModalVisible, setReviewModalVisible] = useState(false);
   const [userRating, setUserRating] = useState(0);
   const [userComment, setUserComment] = useState('');
-  const [reviewMediaUris, setReviewMediaUris] = useState([]); // State untuk menyimpan URI media (sebagai array)
-
+  const [reviewMediaUris, setReviewMediaUris] = useState([]);
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [isCartNotifVisible, setCartNotifVisible] = useState(false);
 
-  // SLIDER GAMBAR
   const images = [
     require("../../assets/products/kaos_polos_3.jpg"),
     require("../../assets/products/kaos_polos_2.jpeg"),
@@ -67,46 +61,64 @@ function DetailProduk1({ route, navigation }) {
     setCurrentSlide(slideIndex);
   };
 
- 
-  // NOMOR WHATSAPP TUJUAN (GANTI)
   const whatsappNumber = "6287731803428"; 
   const openWhatsApp = () => {
     const message = `Halo, saya ingin bertanya tentang produk ${product.name}`;
     Linking.openURL(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`);
   };
 
-  // Fungsi untuk menangani penambahan ke keranjang
   const handleAddToCartClick = () => {
-    setModalAction('addToCart'); // Atur aksi ke 'addToCart'
-    setModalVisible(true); // Hanya tampilkan modal pilihan
+    setModalAction('addToCart');
+    setModalVisible(true);
   };
 
-  // Fungsi untuk menangani klik "Beli Sekarang"
   const handleBuyNowClick = () => {
-    setModalAction('buyNow'); // Atur aksi ke 'buyNow'
-    setModalVisible(true); // Tampilkan modal pilihan
+    setModalAction('buyNow');
+    setModalVisible(true);
   };
 
-  // Fungsi yang dipanggil dari modal setelah user mengonfirmasi pilihan
-  const handleConfirmSelection = (options) => {
-    setModalVisible(false); // Tutup modal setelah ditambahkan
+  // ── INI BAGIAN YANG DIPERBAIKI ──
+  const handleConfirmSelection = async (options) => {
+    console.log('=== OPTIONS DARI MODAL DP1 ===', JSON.stringify(options));
+    setModalVisible(false);
 
     if (modalAction === 'addToCart') {
-      const productWithOptions = { ...product, ...options };
-      addToCart(productWithOptions);
+      try {
+        const token = await SecureStore.getItemAsync('token');
+        console.log('=== TOKEN DP1 ===', token);
+
+        const payload = {
+          product_id: product.id,
+          quantity: options.qty,
+          size: options.size,
+          color: options.color, // FIX: sebelumnya options.type (selalu undefined)
+        };
+        console.log('=== PAYLOAD DP1 ===', JSON.stringify(payload));
+
+        const response = await api.post('/cart', payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        console.log('=== SUCCESS DP1 ===', JSON.stringify(response.data));
+        setCartNotifVisible(true);
+      } catch (error) {
+        console.log('=== ERROR DP1 ===', error.response?.status, JSON.stringify(error.response?.data) || error.message);
+        alert("Gagal menambahkan ke keranjang");
+      }
     } else if (modalAction === 'buyNow') {
-      // Menggunakan harga final (meski tanpa diskon) untuk konsistensi
       const finalPrice = getDiscountedPrice(product);
       const itemToCheckout = { ...product, ...options, price: finalPrice };
-      // Hitung total harga dari harga final
       const total = itemToCheckout.price * itemToCheckout.qty;
       navigation.navigate('Checkout', { items: [itemToCheckout], total: total });
     }
   };
 
-  // Fungsi untuk memilih media (foto/video) dari galeri
+  const handleGoToCart = () => {
+    setCartNotifVisible(false);
+    navigation.navigate('Tabs', { screen: 'Keranjang' });
+  };
+
   const pickMedia = async () => {
-    // Meminta izin untuk mengakses galeri
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.granted === false) {
       alert("Anda perlu memberikan izin untuk mengakses galeri!");
@@ -114,39 +126,36 @@ function DetailProduk1({ route, navigation }) {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, // Hanya izinkan gambar
-      allowsMultipleSelection: true, // Izinkan pemilihan beberapa file
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
       quality: 1,
     });
 
     if (!result.canceled) {
-      // Tambahkan URI gambar yang baru dipilih ke dalam array state
       const newUris = result.assets.map(asset => asset.uri);
       setReviewMediaUris(prevUris => [...prevUris, ...newUris]);
     }
   };
 
-  // Fungsi untuk menangani pengiriman ulasan baru
   const handleReviewSubmit = () => {
     if (userRating === 0) {
       alert('Silakan berikan rating bintang terlebih dahulu.');
       return;
     }
     const newReview = {
-      id: Date.now(), // ID unik untuk ulasan baru
-      user: 'Pengguna Baru', // Nama pengguna (bisa diganti dengan data user login)
+      id: Date.now(),
+      user: 'Pengguna Baru',
       rating: userRating,
       comment: userComment,
-      media: reviewMediaUris, // Tambahkan array media ke objek ulasan
+      media: reviewMediaUris,
     };
-    setAllReviews([newReview, ...allReviews]); // Tambahkan ulasan baru di awal daftar
-    setReviewModalVisible(false); // Tutup modal
-    setUserRating(0); // Reset rating
-    setUserComment(''); // Reset komentar
-    setReviewMediaUris([]); // Reset media
+    setAllReviews([newReview, ...allReviews]);
+    setReviewModalVisible(false);
+    setUserRating(0);
+    setUserComment('');
+    setReviewMediaUris([]);
   };
 
-  // Fungsi untuk merender bintang rating
   const renderStars = (rating) => {
     const stars = [];
     for (let i = 1; i <= 5; i++) {
@@ -195,7 +204,6 @@ function DetailProduk1({ route, navigation }) {
             ))}
           </ScrollView>
 
-          {/* DOT INDICATOR */}
           <View style={styles.dotContainer}>
             {images.map((_, index) => (
               <View
@@ -209,15 +217,12 @@ function DetailProduk1({ route, navigation }) {
         {/* DETAIL PRODUK */}
         <View style={styles.detailsCard}>
           <Text style={styles.productName}>{product.name}</Text>
-          <Text style={styles.productPrice}>Rp {product.price.toLocaleString('id-ID')}</Text>
+          <Text style={styles.productPrice}>Rp {Number(product.price).toLocaleString('id-ID')}</Text>
 
           <Text style={styles.productDescription}>
-            Ini adalah deskripsi detail dari produk: {product.name}. 
-            Kamu bisa menuliskan informasi lengkap seperti bahan, ukuran, 
-            kualitas, dan detail lainnya sesuai kebutuhanmu.
+            {product.description || `Ini adalah deskripsi detail dari produk: ${product.name}. Kamu bisa menuliskan informasi lengkap seperti bahan, ukuran, kualitas, dan detail lainnya sesuai kebutuhanmu.`}
           </Text>
 
-          {/* --- BAGIAN RATING (DIPINDAHKAN) --- */}
           <View style={styles.ratingSummaryContainer}>
             <View style={styles.starContainer}>
               {renderStars(productRating.average)}
@@ -228,10 +233,9 @@ function DetailProduk1({ route, navigation }) {
             <View style={styles.ratingSeparator} />
             <Text style={styles.ratingText}>{productRating.sold} Terjual</Text>
           </View>
-          {/* --- AKHIR BAGIAN RATING --- */}
         </View>
 
-        {/* --- PENAMBAHAN KARTU ULASAN PRODUK --- */}
+        {/* ULASAN */}
         <View style={styles.reviewsCard}>
           <Text style={styles.cardTitle}>Penilaian Produk</Text>
           {allReviews.map(review => (
@@ -243,7 +247,6 @@ function DetailProduk1({ route, navigation }) {
                 </View>
               </View>
               <Text style={styles.reviewComment}>{review.comment}</Text>
-              {/* Tampilkan media jika ada */}
               {review.media && review.media.length > 0 && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.reviewMediaContainer}>
                   {review.media.map((uri, index) => (
@@ -253,7 +256,6 @@ function DetailProduk1({ route, navigation }) {
               )}
             </View>
           ))}
-          {/* Tombol untuk menulis ulasan */}
           <TouchableOpacity style={styles.writeReviewButton} onPress={() => setReviewModalVisible(true)}>
             <Ionicons name="pencil-outline" size={18} color="#fff" />
             <Text style={styles.writeReviewButtonText}>Tulis Ulasan</Text>
@@ -268,8 +270,6 @@ function DetailProduk1({ route, navigation }) {
 
       {/* FOOTER */}
       <View style={styles.footer}>
-
-        {/* CHAT WHATSAPP */}
         <TouchableOpacity onPress={openWhatsApp} style={styles.footerIconContainer}> 
           <Ionicons name="chatbubble-ellipses-outline" size={24} color="#0D1B2A" />
           <Text style={styles.footerIconText}>Chat</Text>
@@ -277,22 +277,19 @@ function DetailProduk1({ route, navigation }) {
 
         <View style={styles.separator} />
 
-        {/* KERANJANG */}
         <TouchableOpacity
-          onPress={handleAddToCartClick} // Buka modal pilihan untuk keranjang
+          onPress={handleAddToCartClick}
           style={styles.footerIconContainer}
         >
           <Ionicons name="cart-outline" size={24} color="#0D1B2A" />
           <Text style={styles.footerIconText}>Keranjang</Text>
         </TouchableOpacity>
 
-        {/* BELI SEKARANG */}
         <TouchableOpacity
-          onPress={handleBuyNowClick} // Buka modal pilihan untuk beli sekarang
+          onPress={handleBuyNowClick}
           style={styles.orderButton}>
           <Text style={styles.orderButtonText}>Beli Sekarang</Text>
         </TouchableOpacity>
-
       </View>
 
       {/* MODAL KONFIRMASI */}
@@ -302,9 +299,10 @@ function DetailProduk1({ route, navigation }) {
         onClose={() => setModalVisible(false)}
         onAddToCart={handleConfirmSelection}
         actionType={modalAction}
+        maxStock={product.stock}
       />
 
-      {/* MODAL UNTUK MENULIS ULASAN */}
+      {/* MODAL ULASAN */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -315,7 +313,6 @@ function DetailProduk1({ route, navigation }) {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Tulis Ulasan Anda</Text>
             
-            {/* Input Rating Bintang */}
             <View style={styles.modalStarContainer}>
               {[1, 2, 3, 4, 5].map((star) => (
                 <TouchableOpacity key={star} onPress={() => setUserRating(star)}>
@@ -329,7 +326,6 @@ function DetailProduk1({ route, navigation }) {
               ))}
             </View>
 
-            {/* Input Komentar */}
             <TextInput
               style={styles.commentInput}
               placeholder="Bagikan pengalaman Anda mengenai produk ini..."
@@ -338,7 +334,6 @@ function DetailProduk1({ route, navigation }) {
               onChangeText={setUserComment}
             />
 
-            {/* Tombol untuk menambah media dan pratinjau */}
             <View style={styles.mediaPickerContainer}>
               <TouchableOpacity style={styles.mediaPickerButton} onPress={pickMedia}>
                 <Ionicons name="camera-outline" size={22} color="#0D1B2A" />
@@ -361,10 +356,45 @@ function DetailProduk1({ route, navigation }) {
               </ScrollView>
             </View>
 
-            {/* Tombol Aksi */}
             <TouchableOpacity style={styles.submitButton} onPress={handleReviewSubmit}>
               <Text style={styles.submitButtonText}>Kirim Ulasan</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL NOTIFIKASI TAMBAH KERANJANG */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isCartNotifVisible}
+        onRequestClose={() => setCartNotifVisible(false)}
+      >
+        <View style={styles.notifOverlay}>
+          <View style={styles.notifContent}>
+            <View style={styles.notifIconContainer}>
+              <Ionicons name="checkmark-circle" size={50} color="#28A745" />
+            </View>
+            <Text style={styles.notifTitle}>Berhasil!</Text>
+            <Text style={styles.notifMessage}>
+              Produk telah ditambahkan ke keranjang
+            </Text>
+
+            <View style={styles.notifButtonContainer}>
+              <TouchableOpacity
+                style={styles.notifSecondaryButton}
+                onPress={() => setCartNotifVisible(false)}
+              >
+                <Text style={styles.notifSecondaryButtonText}>Lanjut Belanja</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.notifPrimaryButton}
+                onPress={handleGoToCart}
+              >
+                <Text style={styles.notifPrimaryButtonText}>Lihat Keranjang</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -373,49 +403,34 @@ function DetailProduk1({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  // Container utama yang membungkus seluruh layar
   container: { flex: 1, backgroundColor: '#F8F9FA' },
-
-  // Header di bagian atas layar
   header: {
     backgroundColor: '#0D1B2A',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 40, // Sesuaikan untuk status bar
+    paddingTop: 40,
     paddingBottom: 15,
     paddingHorizontal: 15,
   },
-
-  // Tombol kembali (panah) di header
   backButton: { marginRight: 10 },
-
-  // Judul produk di header
   headerTitle: { 
     color: '#fff', 
     fontSize: 18, 
     fontWeight: 'bold',
-    maxWidth: width * 0.7, // Batasi lebar agar tidak tumpang tindih
+    maxWidth: width * 0.7,
   },
-
-  // Container untuk slider gambar produk
   sliderContainer: { width: width, height: height * 0.45 },
-
-  // Masing-masing gambar di dalam slider
   sliderImage: {
     width: width,
     height: height * 0.45,
     resizeMode: "cover",
   },
-
-  // Container untuk titik-titik indikator slider
   dotContainer: {
     flexDirection: "row",
     justifyContent: "center",
     marginTop: 10,
     marginBottom: 15,
   },
-
-  // Titik indikator slider (kondisi tidak aktif)
   dot: {
     width: 8, 
     height: 8, 
@@ -423,42 +438,30 @@ const styles = StyleSheet.create({
     borderRadius: 10, 
     marginHorizontal: 4,
   },
-
-  // Titik indikator slider (kondisi aktif)
   dotActive: {
     backgroundColor: "#0D1B2A",
     width: 10,
     height: 10,
   },
-
-  // Kartu putih yang berisi detail informasi produk
   detailsCard: {
     backgroundColor: "#fff",
     padding: 20,
-    borderTopLeftRadius: 20, // Membuat sudut atas melengkung
+    borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
-
-  // Teks nama produk
   productName: { fontSize: 26, fontWeight: 'bold', color: '#0D1B2A' },
-
-  // Teks harga produk
   productPrice: { 
     fontSize: 22, 
     color: '#D9534F', 
     fontWeight: '700', 
     marginTop: 10 
   },
-
-  // Teks deskripsi produk
   productDescription: { 
     fontSize: 16, 
     color: '#555', 
     marginTop: 10,
-    lineHeight: 22, // Jarak antar baris
+    lineHeight: 22,
   },
-
-  // --- STYLE UNTUK RATING & ULASAN ---
   ratingSummaryContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -548,37 +551,26 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginRight: 10,
   },
-  // --- AKHIR STYLE ---
-
-  // Footer di bagian bawah layar
   footer: {
     flexDirection: 'row',
     backgroundColor: '#fff',
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
     alignItems: 'center',
-    paddingBottom: 30, // Padding bawah untuk area aman (misal: iPhone)
+    paddingBottom: 30,
     paddingTop: 10,
   },
-
-  // Container untuk ikon di footer (Chat & Keranjang)
   footerIconContainer: { 
     padding: 12, 
     alignItems: 'center',
     width: 70,
   },
-
-  // Teks kecil di bawah ikon footer
   footerIconText: { fontSize: 10, marginTop: 5 },
-
-  // Garis vertikal pemisah di footer
   separator: { 
     height: '60%', 
     width: 1, 
     backgroundColor: '#e0e0e0' 
   },
-
-  // Tombol "Beli Sekarang"
   orderButton: {
     flex: 1,
     backgroundColor: '#0D1B2A',
@@ -588,15 +580,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     borderRadius: 8,
   },
-
-  // Teks di dalam tombol "Beli Sekarang"
   orderButtonText: { 
     color: '#fff', 
     fontSize: 16, 
     fontWeight: 'bold' 
   },
-
-  // --- STYLE UNTUK MODAL ULASAN ---
   modalContainer: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -641,7 +629,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-
   mediaPickerContainer: {
     width: '100%',
     alignItems: 'flex-start',
@@ -678,7 +665,67 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 12,
   },
-
+  notifOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 30,
+  },
+  notifContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 25,
+    width: '100%',
+    alignItems: 'center',
+  },
+  notifIconContainer: {
+    marginBottom: 10,
+  },
+  notifTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#0D1B2A',
+    marginBottom: 5,
+  },
+  notifMessage: {
+    fontSize: 14,
+    color: '#555',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  notifButtonContainer: {
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'space-between',
+  },
+  notifSecondaryButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#0D1B2A',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  notifSecondaryButtonText: {
+    color: '#0D1B2A',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  notifPrimaryButton: {
+    flex: 1,
+    backgroundColor: '#0D1B2A',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  notifPrimaryButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
 });
 
 export default DetailProduk1;

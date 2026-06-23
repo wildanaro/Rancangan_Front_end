@@ -11,7 +11,7 @@ import {
   Modal, TextInput
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useCart } from '../../CartContext'; // Path diperbaiki
+import { useCart } from '../context/CartContext'; // Path diperbaiki
 import * as ImagePicker from 'expo-image-picker'; // Import Image Picker
 
 import ConfirmationModal from './ConfirmationProduk';  // Path diperbaiki

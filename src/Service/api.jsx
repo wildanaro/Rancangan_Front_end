@@ -1,19 +1,43 @@
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
 
-// Konfigurasi dasar Axios
 const api = axios.create({
-  // Ganti IP ini dengan IP Komputer Anda (Bukan 127.0.0.1 agar terbaca di HP/Emulator)
   baseURL: "http://10.89.16.228:8000/api",
+  timeout: 10000,
+  headers: {
+    Accept: 'application/json',
+  },
 });
 
-// Interceptor: Menambahkan token secara otomatis ke setiap request
-api.interceptors.request.use(async (config) => {
-  const token = await SecureStore.getItemAsync("token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+api.interceptors.request.use(
+  async (config) => {
+    const token = await SecureStore.getItemAsync("token");
+
+    if (__DEV__) {
+      console.log("=== TOKEN ===", token);
+      console.log("=== URL ===", config.url);
+    }
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401) {
+      await SecureStore.deleteItemAsync("token");
+      await SecureStore.deleteItemAsync("name");
+      await SecureStore.deleteItemAsync("email");
+      // opsional: arahkan ke screen login
+    }
+    return Promise.reject(error);
   }
-  return config;
-});
+);
 
 export default api;

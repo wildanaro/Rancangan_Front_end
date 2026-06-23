@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { Text, View, Image, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { Text, View, Image, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { TextInput, ScrollView } from 'react-native';
 import { useNavigation } from "@react-navigation/native";
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faEye, faEyeSlash } from '@fortawesome/free-solid-svg-icons';
 import { faGoogle, faFacebook } from '@fortawesome/free-brands-svg-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import api from "../Service/api";
 
 export default function HomeScreen() {
@@ -14,6 +14,7 @@ export default function HomeScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleGoogleLogin = () => {
     navigation.navigate("WebView", {
@@ -37,6 +38,8 @@ export default function HomeScreen() {
       return;
     }
 
+    setIsLoading(true);
+
     try {
       const response = await api.post("/login", {
         email: email,
@@ -44,10 +47,10 @@ export default function HomeScreen() {
       });
 
       if (response.data.success) {
-        // Simpan token & data user ke AsyncStorage
-        await AsyncStorage.setItem('token', response.data.data.token);
-        await AsyncStorage.setItem('name', response.data.data.name);
-        await AsyncStorage.setItem('email', response.data.data.email);
+        // Simpan token & data user ke SecureStore agar bisa dibaca oleh api.jsx
+        await SecureStore.setItemAsync('token', response.data.data.token);
+        await SecureStore.setItemAsync('name', response.data.data.name);
+        await SecureStore.setItemAsync('email', response.data.data.email);
 
         Alert.alert("Login Berhasil", `Selamat datang, ${response.data.data.name}!`);
         navigation.navigate("Tabs");
@@ -61,6 +64,8 @@ export default function HomeScreen() {
         "Login Gagal",
         error.response?.data?.message || "Tidak dapat terhubung ke server."
       );
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -91,6 +96,7 @@ export default function HomeScreen() {
               style={styles.input}
               autoCapitalize="none"
               keyboardType="email-address"
+              editable={!isLoading}
             />
 
             {/* INPUT PASSWORD */}
@@ -102,6 +108,7 @@ export default function HomeScreen() {
                 onChangeText={setPassword}
                 secureTextEntry={!isPasswordVisible}
                 style={styles.passwordInput}
+                editable={!isLoading}
               />
               <TouchableOpacity
                 onPress={() => setIsPasswordVisible(!isPasswordVisible)}
@@ -121,14 +128,23 @@ export default function HomeScreen() {
             </TouchableOpacity>
 
             {/* TOMBOL LOGIN */}
-            <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-              <Text style={styles.loginButtonText}>Log In</Text>
+            <TouchableOpacity
+              style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
+              onPress={handleLogin}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#F8F9FA" />
+              ) : (
+                <Text style={styles.loginButtonText}>Log In</Text>
+              )}
             </TouchableOpacity>
+
 
             {/* LINK REGISTER */}
             <View style={styles.registerContainer}>
               <Text style={styles.registerText}>Belum punya akun? </Text>
-              <TouchableOpacity onPress={() => navigation.navigate("Registrasi")}>
+              <TouchableOpacity onPress={() => navigation.navigate("Registrasi")} disabled={isLoading}>
                 <Text style={styles.registerButtonText}>Daftar di sini</Text>
               </TouchableOpacity>
             </View>
@@ -213,6 +229,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: 'center',
     elevation: 2,
+  },
+  loginButtonDisabled: {
+    opacity: 0.7,
   },
   loginButtonText: {
     textAlign: "center",

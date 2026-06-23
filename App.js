@@ -1,7 +1,7 @@
 import * as React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import RootStack from "./src/routers/RootStack";
-import { CartProvider } from "./CartContext";
+import { CartProvider } from "./src/context/CartContext";
 import api from "./src/Service/api";
 
 

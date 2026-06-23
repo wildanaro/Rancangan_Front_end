@@ -11,7 +11,8 @@ import {
   Modal, TextInput
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useCart } from '../../CartContext'; // Path diperbaiki
+import api from '../Service/api';
+import * as SecureStore from 'expo-secure-store';
 import * as ImagePicker from 'expo-image-picker'; // Import Image Picker
 
 import ConfirmationModal from './ConfirmationProduk';  // Path diperbaiki
@@ -20,7 +21,7 @@ const { width, height } = Dimensions.get("window");
 
 function DetailProduk6({ route, navigation }) {
   const { product } = route.params;
-  const { addToCart } = useCart(); // Ambil fungsi addToCart dari context
+  const [isCartNotifVisible, setCartNotifVisible] = useState(false);
 
   // State untuk mengontrol visibilitas modal
   const [isModalVisible, setModalVisible] = useState(false);
@@ -88,13 +89,26 @@ function DetailProduk6({ route, navigation }) {
   };
 
   // Fungsi yang dipanggil dari modal setelah user mengonfirmasi pilihan
-  const handleConfirmSelection = (options) => {
+  const handleConfirmSelection = async (options) => {
     setModalVisible(false); // Tutup modal setelah ditambahkan
 
     if (modalAction === 'addToCart') {
-      const finalPrice = getDiscountedPrice(product);
-      const productWithOptions = { ...product, ...options, price: finalPrice };
-      addToCart(productWithOptions);
+      try {
+        const token = await SecureStore.getItemAsync('token');
+        await api.post('/cart', {
+          product_id: product.id,
+          quantity: options.qty,
+          size: options.size,
+          color: options.type || options.color
+        }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        setCartNotifVisible(true);
+      } catch (error) {
+        console.log("Add to cart error:", error);
+        alert("Gagal menambahkan ke keranjang");
+      }
     } else if (modalAction === 'buyNow') {
       // Siapkan item yang akan di-checkout dengan harga diskon
       const finalPrice = getDiscountedPrice(product);

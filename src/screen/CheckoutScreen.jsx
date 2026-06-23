@@ -5,6 +5,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from "expo-location";
+import { ActivityIndicator } from 'react-native';
+import api from '../Service/api';
+import * as SecureStore from 'expo-secure-store';
 
 /**
  * Komponen layar Checkout.
@@ -30,6 +33,7 @@ function CheckoutScreen({ route, navigation }) {
   const [bankType, setBankType] = useState("");
 
   const [coords, setCoords] = useState(null); // State untuk menyimpan koordinat GPS
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Kalkulasi biaya
   const shippingCost = shippingMethod === "Reguler" ? 12000 : 22000;
@@ -70,43 +74,62 @@ function CheckoutScreen({ route, navigation }) {
    * menampilkan alert konfirmasi, dan kemudian menavigasi pengguna ke layar "Pesanan"
    * dengan membawa data pesanan yang baru dibuat.
    */
-  const handlePlaceOrder = () => {
-    if (!buyerName || !address || !phone) {
-      Alert.alert("Data Belum Lengkap", "Isi semua data pengiriman.");
-      return;
+const handlePlaceOrder = async () => {
+  if (!buyerName || !address || !phone) {
+    Alert.alert("Data Belum Lengkap", "Isi semua data pengiriman.");
+    return;
+  }
+
+  if (!paymentMethod) {
+    Alert.alert("Pembayaran Belum Dipilih", "Pilih metode pembayaran terlebih dahulu.");
+    return;
+  }
+
+  setIsSubmitting(true);
+
+  try {
+    const token = await SecureStore.getItemAsync('token');
+
+    // cart_ids diambil dari item yang dikirim dari KeranjangScreen
+    const cartIds = items.map(item => item.id || item.cartId);
+
+    const response = await api.post('/checkout', {
+      cart_ids: cartIds,
+      buyer_name: buyerName,
+      phone: phone,
+      address: address,
+      note: note,
+      shipping_method: shippingMethod,
+      shipping_cost: shippingCost,
+      discount: discount,
+      payment_method: paymentMethod,
+      bank_type: bankType || null,
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (response.data.success) {
+      Alert.alert(
+        "Pesanan Dikonfirmasi",
+        "Pesanan Anda telah berhasil dibuat. Lihat detailnya di halaman pesanan.",
+        [{
+          text: "OK",
+          onPress: () => {
+            navigation.navigate("Tabs", { screen: "Pesanan" });
+          }
+        }]
+      );
     }
-
-    const orderDetails = {
-      buyerName,
-      address,
-      phone,
-      note,
-      paymentMethod,
-      bankType,
-      items,
-      total,
-      shippingCost,
-      discount,
-      finalTotal,
-      shippingMethod,
-      orderDate: new Date().toISOString(),
-    };
-
+  } catch (error) {
+    console.log('=== CHECKOUT ERROR ===', error.response?.data || error.message);
     Alert.alert(
-      "Pesanan Dikonfirmasi",
-      "Pesanan Anda telah berhasil dibuat. Lihat detailnya di halaman pesanan.",
-      [{ 
-        text: "OK", 
-        onPress: () => {
-          // Navigasi ke Tab Navigator dulu, baru ke screen 'Pesanan' di dalamnya
-          navigation.navigate("Tabs", { 
-            screen: "Pesanan",
-            params: { order: orderDetails },
-          });
-        } 
-      }]
+      "Gagal",
+      error.response?.data?.message || "Tidak dapat membuat pesanan."
     );
-  };
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   return (
     <View style={styles.container}>
@@ -176,7 +199,13 @@ function CheckoutScreen({ route, navigation }) {
         {/* DAFTAR PRODUK YANG DI-CHECKOUT */}
         {items.map(item => (
   <View key={item.cartItemId || item.id} style={styles.itemCard}>
-    <Image source={item.image} style={styles.itemImage} />
+    <Image 
+      source={typeof item.image === 'string' 
+        ? { uri: item.image.startsWith('http') ? item.image : `http://10.89.16.228:8000/storage/${item.image}` } 
+        : item.image
+      } 
+      style={styles.itemImage} 
+    />
 
     <View style={styles.itemInfo}>
       <Text style={styles.itemName}>{item.name}</Text>
@@ -191,11 +220,11 @@ function CheckoutScreen({ route, navigation }) {
         </View>
       )}
       <Text style={styles.itemQty}>Jumlah: {item.qty}</Text>
-      <Text style={styles.itemPrice}>Rp {item.price.toLocaleString('id-ID')}</Text>
+      <Text style={styles.itemPrice}>Rp {Number (item.price).toLocaleString('id-ID')}</Text>
     </View>
 
     <Text style={styles.itemTotalPrice}>
-      Rp {(item.price * item.qty).toLocaleString('id-ID')}
+      Rp {(Number(item.price) * item.qty).toLocaleString('id-ID')}
     </Text>
   </View>
 ))}
@@ -322,9 +351,17 @@ function CheckoutScreen({ route, navigation }) {
           <Text style={styles.totalPrice}>Rp {finalTotal.toLocaleString()}</Text>
         </View>
 
-        <TouchableOpacity style={styles.placeOrderButton} onPress={handlePlaceOrder}>
-          <Text style={styles.placeOrderText}>Buat Pesanan</Text>
-        </TouchableOpacity>
+        <TouchableOpacity 
+  style={[styles.placeOrderButton, isSubmitting && { opacity: 0.6 }]} 
+  onPress={handlePlaceOrder}
+  disabled={isSubmitting}
+>
+  {isSubmitting ? (
+    <ActivityIndicator color="#fff" />
+  ) : (
+    <Text style={styles.placeOrderText}>Buat Pesanan</Text>
+  )}
+</TouchableOpacity>
       </View>
 
     </View>

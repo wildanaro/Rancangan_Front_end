@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,21 +6,79 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  ActivityIndicator,
+  Alert
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useCart } from '../../CartContext'; // Path sudah benar jika CartContext di root
+import api from '../Service/api';
+import * as SecureStore from 'expo-secure-store';
+import { useIsFocused } from '@react-navigation/native';
 import ConfirmationModal from '../DetailProduk/ConfirmationModal'; // Import modal
 
 function KeranjangScreen({ navigation }) {
-  // Ambil semua data dan fungsi dari CartContext
-  const { 
-    cartItems, 
-    increaseQty, 
-    decreaseQty, 
-    deleteItem,
-    updateItem,
-    toggleItemSelected,
-  } = useCart(); 
+  const isFocused = useIsFocused();
+  const [cartItems, setCartItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Gunakan useCallback agar referensi fungsi tidak berubah setiap render
+  const fetchCart = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const token = await SecureStore.getItemAsync('token');
+      const response = await api.get('/cart', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data.success) {
+        const mapped = response.data.data.map(item => ({
+          cartId: item.id,
+          cartItemId: `${item.product_id}-${item.size}-${item.color}`,
+          id: item.product.id,
+          name: item.product.name,
+          price: item.product.price,
+          image: item.product.image,
+          qty: item.quantity,
+          size: item.size,
+          type: item.color,
+          selected: false
+        }));
+        setCartItems(mapped);
+      }
+    } catch (error) {
+      console.error("Fetch Error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []); // Kosong karena api dan SecureStore bersifat stabil
+
+  useEffect(() => {
+    if (isFocused) fetchCart();
+  }, [isFocused, fetchCart]);
+
+  // Fungsi Update Quantity
+  const updateQuantity = async (cartId, newQty) => {
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      await api.put(`/cart/${cartId}`, { quantity: newQty }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchCart();
+    } catch (error) {
+      alert("Gagal update jumlah");
+    }
+  };
+
+  // Fungsi Hapus Item
+  const deleteItem = async (cartId) => {
+    try {
+      const token = await SecureStore.getItemAsync('token');
+      await api.delete(`/cart/${cartId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchCart();
+    } catch (error) {
+      alert("Gagal menghapus item");
+    }
+  };
 
   // State untuk modal edit
   const [isEditModalVisible, setEditModalVisible] = useState(false);
@@ -35,15 +93,18 @@ function KeranjangScreen({ navigation }) {
   // Total harga hanya dari item yang dipilih
   const totalPrice = selectedItems.reduce(
     (sum, item) => {
-      // Ubah harga dari string (misal: "Rp 75.000") menjadi angka (75000) sebelum kalkulasi
-      const priceString = String(item.price || '0'); // Pastikan item.price adalah string
-      const priceAsNumber = parseInt(priceString.replace(/[^0-9]/g, ''), 10);
-      // Jika parsing gagal (misal, string kosong), default ke 0
-      if (isNaN(priceAsNumber)) return sum;
-      return sum + priceAsNumber * item.qty; // Kalkulasi sudah benar, hanya sumber datanya yang diubah
+      const price = Number(item.price || 0);
+      return sum + price * item.qty;
     },
     0
   );
+
+  // Handler Lokal
+  const toggleItemSelected = (cartItemId) => {
+    setCartItems(prev => prev.map(item => 
+      item.cartItemId === cartItemId ? { ...item, selected: !item.selected } : item
+    ));
+  };
 
   // Fungsi untuk membuka modal edit
   const handleEditPress = useCallback((item) => {
@@ -52,25 +113,60 @@ function KeranjangScreen({ navigation }) {
   }, []);
 
   // Fungsi untuk mengkonfirmasi perubahan dari modal
-  const handleConfirmEdit = useCallback((options) => {
+  const handleConfirmEdit = useCallback(async (options) => {
     if (currentItemToEdit) {
-      updateItem(currentItemToEdit.cartItemId, options);
+      try {
+        const token = await SecureStore.getItemAsync('token');
+        // Skenario Update: Hapus yang lama, tambah yang baru (sesuai logic Laravel Sanctum Anda jika ID berubah)
+        await api.delete(`/cart/${currentItemToEdit.cartId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        await api.post('/cart', {
+          product_id: currentItemToEdit.id,
+          quantity: options.qty,
+          size: options.size,
+          color: options.type
+        }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        fetchCart();
+      } catch (error) {
+        alert("Gagal update item");
+      }
     }
     setEditModalVisible(false);
     setCurrentItemToEdit(null);
-  }, [currentItemToEdit, updateItem]);
+  }, [currentItemToEdit, fetchCart]);
 
   // Fungsi untuk menangani checkout
-  const handleCheckout = () => {
-    if (selectedItems.length > 0) {
-      // Navigasi ke halaman Checkout dengan membawa data item yang dipilih
-      // Penghapusan item sebaiknya dilakukan setelah checkout berhasil, bukan di sini.
-      navigation.navigate('Checkout', { items: selectedItems, total: totalPrice });
-    }
-  };
+const handleCheckout = () => {
+  const selectedItems = cartItems.filter(item => item.selected);
+  if (selectedItems.length === 0) {
+    Alert.alert("Peringatan", "Pilih minimal 1 produk untuk checkout.");
+    return;
+  }
+  
+  const itemsForCheckout = selectedItems.map(item => ({
+    id: item.cartId, // PENTING: id baris cart di database
+    name: item.name,
+    price: item.price,
+    image: item.image,
+    qty: item.qty,
+    size: item.size,
+    type: item.type,
+  }));
+  
+  navigation.navigate('Checkout', { items: itemsForCheckout, total: totalPrice });
+};
 
   return (
     <View style={styles.container}>
+      {isLoading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#0D1B2A" />
+        </View>
+      )}
+
       {/* KONTEN */}
       <ScrollView contentContainerStyle={styles.content}>
         {/* Notifikasi Jumlah Produk */}
@@ -105,8 +201,15 @@ function KeranjangScreen({ navigation }) {
                   size={24} 
                   color={item.selected ? "#343A40" : "#aaa"} />
               </TouchableOpacity>
-              {/* Menggunakan source={item.image} untuk gambar lokal dari 'require' */}
-              <Image source={item.image} style={styles.itemImage} />
+              {/* Mendukung gambar lokal (require) dan gambar string (uri) */}
+              <Image
+                source={
+                  typeof item.image === 'string'
+                    ? { uri: item.image.startsWith('http') ? item.image : `http://10.89.16.228:8000/storage/${item.image}` }
+                    : item.image
+                }
+                style={styles.itemImage} 
+              />
 
               <View style={styles.itemInfo}> 
                 {/* Mengubah format harga dari string "Rp 120.000" menjadi angka */}
@@ -120,13 +223,13 @@ function KeranjangScreen({ navigation }) {
                   </View>
                 )}
 
-                <Text style={styles.itemPrice}>Rp {parseInt(String(item.price || '0').replace(/[^0-9]/g, ''), 10).toLocaleString()}</Text>
+                <Text style={styles.itemPrice}>Rp {Number(item.price || 0).toLocaleString('id-ID')}</Text>
 
                 {/* QTY */}
                 <View style={styles.qtyRow}>
                   <TouchableOpacity
                     style={styles.qtyBtn}
-                    onPress={() => decreaseQty(item.cartItemId)}
+                    onPress={() => item.qty > 1 && updateQuantity(item.cartId, item.qty - 1)}
                   >
                     <Ionicons name="remove" size={14} color="#000" />
                   </TouchableOpacity>
@@ -135,7 +238,7 @@ function KeranjangScreen({ navigation }) {
 
                   <TouchableOpacity
                     style={styles.qtyBtn}
-                    onPress={() => increaseQty(item.cartItemId)}
+                    onPress={() => updateQuantity(item.cartId, item.qty + 1)}
                   >
                     <Ionicons name="add" size={14} color="#000" />
                   </TouchableOpacity>
@@ -147,7 +250,7 @@ function KeranjangScreen({ navigation }) {
                 {/* DELETE BUTTON */}
                 <TouchableOpacity
                   style={styles.actionBtn}
-                  onPress={() => deleteItem(item.cartItemId)}
+                  onPress={() => deleteItem(item.cartId)}
                 >
                   <Ionicons name="trash-outline" size={16} color="red" />
                 </TouchableOpacity>

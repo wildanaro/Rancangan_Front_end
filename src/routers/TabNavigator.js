@@ -2,19 +2,19 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 
 import BerandaScreen from '../screen/BerandaScreen';
 import KeranjangScreen from '../screen/KeranjangScreen';
 import PesananScreen from '../screen/PesananScreen';
 import AkunScreen from '../screen/AkunScreen';
 
-import { useCart } from '../../CartContext';
+import { useCart } from '../context/CartContext';
 
 const Tab = createBottomTabNavigator();
 
 const TabNavigator = () => {
-  const { cartItemCount, orders } = useCart();
-  const orderCount = orders.length;
+  const { cartItemCount, orderCount, fetchOrderCount } = useCart();
 
   return (
     <Tab.Navigator
@@ -30,7 +30,7 @@ const TabNavigator = () => {
             badgeCount = cartItemCount;
           } else if (route.name === 'Pesanan') {
             iconName = focused ? 'receipt' : 'receipt-outline';
-            badgeCount = orderCount; // Gunakan jumlah pesanan untuk badge
+            badgeCount = orderCount; // ← dari context, update otomatis
           } else if (route.name === 'Akun') {
             iconName = focused ? 'person' : 'person-outline';
           }
@@ -40,7 +40,9 @@ const TabNavigator = () => {
               <Ionicons name={iconName} size={size} color={color} />
               {badgeCount > 0 && (
                 <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{badgeCount}</Text>
+                  <Text style={styles.badgeText}>
+                    {badgeCount > 99 ? '99+' : badgeCount}
+                  </Text>
                 </View>
               )}
             </View>
@@ -49,12 +51,21 @@ const TabNavigator = () => {
         tabBarActiveTintColor: '#343A40',
         tabBarInactiveTintColor: 'gray',
         headerShown: false,
-        tabBarShowLabel: false, // Sembunyikan label agar ikon lebih rapi
+        tabBarShowLabel: false,
       })}
     >
       <Tab.Screen name="Beranda" component={BerandaScreen} />
       <Tab.Screen name="Keranjang" component={KeranjangScreen} />
-      <Tab.Screen name="Pesanan" component={PesananScreen} />
+      <Tab.Screen
+        name="Pesanan"
+        component={PesananScreen}
+        listeners={{
+          // Refresh order count setiap kali tab Pesanan diklik
+          tabPress: () => {
+            fetchOrderCount();
+          },
+        }}
+      />
       <Tab.Screen name="Akun" component={AkunScreen} />
     </Tab.Navigator>
   );
@@ -72,10 +83,11 @@ const styles = StyleSheet.create({
     top: -3,
     backgroundColor: '#E53935',
     borderRadius: 8,
-    width: 16,
+    minWidth: 16,
     height: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 2,
   },
   badgeText: {
     color: 'white',

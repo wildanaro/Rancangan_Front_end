@@ -1,32 +1,41 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Modal, View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-const ConfirmationProduk = ({ visible, onClose, onAddToCart, productName, initialSize, initialType, initialQuantity, actionType, sizes }) => {
-  // Gunakan 'sizes' dari props jika ada, jika tidak gunakan default.
-  const availableSizes = sizes || ['S', 'M', 'L', 'XL'];
-  const availableTypes = ['Merah', 'Biru', 'Hitam'];
+const ConfirmationProduk = ({
+  visible, onClose, onAddToCart,
+  productName, initialSize, initialColor,
+  initialQuantity, actionType, sizes, colors, maxStock,
+}) => {
+  const availableSizes  = sizes  || ['S', 'M', 'L', 'XL'];
+  const availableColors = colors || ['Merah', 'Biru', 'Hitam'];
 
-  const [selectedSize, setSelectedSize] = useState(initialSize || availableSizes[0]);
-  const [selectedType, setSelectedType] = useState(initialType || 'Merah');
-  const [quantity, setQuantity] = useState(initialQuantity || 1);
+  const [selectedSize,  setSelectedSize]  = useState(initialSize  || availableSizes[0]);
+  const [selectedColor, setSelectedColor] = useState(initialColor || availableColors[0]);
+  const [quantity,      setQuantity]      = useState(initialQuantity || 1);
+  const [loading,       setLoading]       = useState(false);
 
-  // useEffect untuk me-reset state ketika props berubah (modal dibuka untuk item baru)
   useEffect(() => {
-    setSelectedSize(initialSize || availableSizes[0]);
-    setSelectedType(initialType || 'Merah');
-    setQuantity(initialQuantity || 1);
-  }, [visible, initialSize, initialType, initialQuantity]);
+    setSelectedSize(initialSize   || availableSizes[0]);
+    setSelectedColor(initialColor || availableColors[0]);
+    setQuantity(initialQuantity   || 1);
+  }, [visible, initialSize, initialColor, initialQuantity]);
 
-  if (!visible) {
-    return null;
-  }
+  if (!visible) return null;
 
-  const handleAddToCart = () => {
-    onAddToCart({ size: selectedSize, type: selectedType, qty: quantity });
-  };
+  const handleConfirm = async () => {
+  console.log('=== HANDLE CONFIRM DIPANGGIL ===');
+  setLoading(true);
+  await onAddToCart({
+    size:  selectedSize,
+    color: selectedColor,
+    qty:   quantity,
+  });
+  setLoading(false);
+};
 
   const increaseQuantity = () => {
+    if (maxStock && quantity >= maxStock) return;
     setQuantity(prev => prev + 1);
   };
 
@@ -34,19 +43,20 @@ const ConfirmationProduk = ({ visible, onClose, onAddToCart, productName, initia
     setQuantity(prev => (prev > 1 ? prev - 1 : 1));
   };
 
-
   return (
     <Modal
-      animationType="fade"
+      animationType="slide"
       transparent={true}
       visible={visible}
       onRequestClose={onClose}
     >
       <View style={styles.centeredView}>
         <View style={styles.modalView}>
-          <Text style={styles.modalTitle}>{productName}</Text>
-          
-          {/* Pilihan Ukuran */}
+
+          {/* JUDUL */}
+          <Text style={styles.modalTitle} numberOfLines={2}>{productName}</Text>
+
+          {/* PILIH UKURAN */}
           <Text style={styles.optionLabel}>Pilih Ukuran:</Text>
           <View style={styles.optionContainer}>
             {availableSizes.map(size => (
@@ -55,26 +65,30 @@ const ConfirmationProduk = ({ visible, onClose, onAddToCart, productName, initia
                 style={[styles.optionButton, selectedSize === size && styles.optionButtonSelected]}
                 onPress={() => setSelectedSize(size)}
               >
-                <Text style={[styles.optionText, selectedSize === size && styles.optionTextSelected]}>{size}</Text>
+                <Text style={[styles.optionText, selectedSize === size && styles.optionTextSelected]}>
+                  {size}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {/* Pilihan Jenis/Warna */}
+          {/* PILIH WARNA */}
           <Text style={styles.optionLabel}>Pilih Warna:</Text>
           <View style={styles.optionContainer}>
-            {availableTypes.map(type => (
+            {availableColors.map(color => (
               <TouchableOpacity
-                key={type}
-                style={[styles.optionButton, selectedType === type && styles.optionButtonSelected]}
-                onPress={() => setSelectedType(type)}
+                key={color}
+                style={[styles.optionButton, selectedColor === color && styles.optionButtonSelected]}
+                onPress={() => setSelectedColor(color)}
               >
-                <Text style={[styles.optionText, selectedType === type && styles.optionTextSelected]}>{type}</Text>
+                <Text style={[styles.optionText, selectedColor === color && styles.optionTextSelected]}>
+                  {color}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {/* Pilihan Jumlah */}
+          {/* JUMLAH */}
           <Text style={styles.optionLabel}>Jumlah:</Text>
           <View style={styles.quantityContainer}>
             <TouchableOpacity onPress={decreaseQuantity} style={styles.quantityButton}>
@@ -86,24 +100,34 @@ const ConfirmationProduk = ({ visible, onClose, onAddToCart, productName, initia
             </TouchableOpacity>
           </View>
 
+          {/* INFO STOK */}
+          {maxStock !== undefined && (
+            <Text style={styles.stockInfo}>Stok tersedia: {maxStock}</Text>
+          )}
+
+          {/* TOMBOL KONFIRMASI */}
           <TouchableOpacity
-            style={[styles.button, styles.buttonAddToCart, { backgroundColor: '#0D1B2A' }]}
-            onPress={handleAddToCart}
+            style={[styles.button, styles.buttonAddToCart]}
+            onPress={handleConfirm}
+            disabled={loading}
           >
-            {actionType === 'addToCart' && (
-              <Ionicons name="cart" size={20} color="white" />
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                {actionType === 'addToCart' && <Ionicons name="cart" size={20} color="white" />}
+                <Text style={styles.textStyle}>
+                  {actionType === 'addToCart' ? 'Tambah ke Keranjang' : 'Beli Sekarang'}
+                </Text>
+              </>
             )}
-            <Text style={styles.textStyle}>
-              {actionType === 'addToCart' ? 'Tambah ke Keranjang' : 'Beli Sekarang'}
-            </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.button, styles.buttonClose]}
-            onPress={onClose}
-          >
+          {/* TOMBOL BATAL */}
+          <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={onClose}>
             <Text style={styles.textStyleClose}>Batal</Text>
           </TouchableOpacity>
+
         </View>
       </View>
     </Modal>
@@ -113,46 +137,35 @@ const ConfirmationProduk = ({ visible, onClose, onAddToCart, productName, initia
 const styles = StyleSheet.create({
   centeredView: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end', // Muncul dari bawah
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   modalView: {
-    margin: 20,
     backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 35,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 25,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-    width: '85%',
   },
   modalTitle: {
-    marginTop: 15,
-    marginBottom: 5,
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
     color: '#0D1B2A',
+    marginBottom: 5,
   },
   optionLabel: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     alignSelf: 'flex-start',
-    marginTop: 20,
-    marginBottom: 10,
+    marginTop: 15,
+    marginBottom: 8,
     color: '#0D1B2A',
   },
   optionContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-start',
+    alignSelf: 'flex-start',
   },
   optionButton: {
     borderWidth: 1,
@@ -161,49 +174,19 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 15,
     marginRight: 10,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   optionButtonSelected: {
     backgroundColor: '#0D1B2A',
     borderColor: '#0D1B2A',
   },
-  optionText: {
-    color: '#0D1B2A',
-  },
+  optionText: { color: '#333' },
   optionTextSelected: { color: '#fff' },
-  button: {
-    borderRadius: 8,
-    padding: 12,
-    elevation: 2,
-    width: '100%',
-    marginBottom: 10,
-  },
-  buttonAddToCart: {
-    backgroundColor: '#0D1B2A',
-    marginTop: 20,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  buttonClose: {
-    backgroundColor: '#f0f0f0',
-  },
-  textStyle: {
-    color: 'white',
-    marginLeft: 10,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  textStyleClose: {
-    color: '#0D1B2A',
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
   quantityContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    marginBottom: 15,
+    marginBottom: 5,
   },
   quantityButton: {
     borderWidth: 1,
@@ -217,6 +200,27 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     color: '#0D1B2A',
   },
+  stockInfo: {
+    alignSelf: 'flex-start',
+    fontSize: 12,
+    color: '#5cb85c',
+    marginBottom: 5,
+  },
+  button: {
+    borderRadius: 8,
+    padding: 14,
+    width: '100%',
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  buttonAddToCart: {
+    backgroundColor: '#0D1B2A',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  buttonClose: { backgroundColor: '#f0f0f0' },
+  textStyle: { color: 'white', marginLeft: 8, fontWeight: 'bold', fontSize: 15 },
+  textStyleClose: { color: '#0D1B2A', fontWeight: 'bold', fontSize: 15 },
 });
 
 export default ConfirmationProduk;

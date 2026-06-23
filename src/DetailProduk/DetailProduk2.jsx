@@ -11,7 +11,8 @@ import {
   Modal, TextInput
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useCart } from '../../CartContext'; // Path diperbaiki
+import api from '../Service/api';
+import * as SecureStore from 'expo-secure-store';
 import * as ImagePicker from 'expo-image-picker'; // Import Image Picker
 
 import ConfirmationModal from './ConfirmationProduk';  // Path diperbaiki
@@ -20,10 +21,16 @@ const { width, height } = Dimensions.get("window");
 
 function DetailProduk2({ route, navigation }) {
   const { product } = route.params;
-  const { addToCart } = useCart(); // Ambil fungsi addToCart dari context
+  const [isCartNotifVisible, setCartNotifVisible] = useState(false);
 
   // State untuk mengontrol visibilitas modal
   const [isModalVisible, setModalVisible] = useState(false);
+
+  const getDiscountedPrice = (item) => {
+    if (!item.discount) return item.price;
+    const discountAmount = item.price * (item.discount / 100);
+    return item.price - discountAmount;
+  };
 
   // Data statis untuk rating dan ulasan produk
   const productRating = {
@@ -82,19 +89,46 @@ function DetailProduk2({ route, navigation }) {
   };
 
   // Fungsi yang dipanggil dari modal setelah user mengonfirmasi pilihan
-  const handleConfirmSelection = (options) => {
-    setModalVisible(false); // Tutup modal setelah ditambahkan
+  const handleConfirmSelection = async (options) => {
+    console.log('=== OPTIONS DARI MODAL DP2 ===', JSON.stringify(options));
+    setModalVisible(false);
 
     if (modalAction === 'addToCart') {
-      const productWithOptions = { ...product, ...options };
-      addToCart(productWithOptions);
+      try {
+        const token = await SecureStore.getItemAsync('token');
+        console.log('=== TOKEN DP2 ===', token);
+
+        const payload = {
+          product_id: product.id,
+          quantity: options.qty,
+          size: options.size,
+          color: options.color,
+        };
+        console.log('=== PAYLOAD DP2 ===', JSON.stringify(payload));
+
+        const response = await api.post('/cart', payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        console.log('=== SUCCESS DP2 ===', JSON.stringify(response.data));
+        setCartNotifVisible(true);
+      } catch (error) {
+        console.log('=== ERROR DP2 ===', error.response?.status, JSON.stringify(error.response?.data) || error.message);
+        alert("Gagal menambahkan ke keranjang");
+      }
     } else if (modalAction === 'buyNow') {
-      // Siapkan item yang akan di-checkout dengan opsi yang dipilih
-      const itemToCheckout = { ...product, ...options };
+      const finalPrice = getDiscountedPrice(product);
+      const itemToCheckout = { ...product, ...options, price: finalPrice };
+
       // Hitung total harga untuk item ini
-      const total = parseInt(itemToCheckout.price.replace(/[^0-9]/g, ''), 10) * itemToCheckout.qty;
+      const total = Number(itemToCheckout.price) * itemToCheckout.qty;
       navigation.navigate('Checkout', { items: [itemToCheckout], total: total });
     }
+  };
+
+  const handleGoToCart = () => {
+    setCartNotifVisible(false);
+    navigation.navigate('Tabs', { screen: 'Keranjang' });
   };
 
   // Fungsi untuk memilih media (foto/video) dari galeri
@@ -202,7 +236,7 @@ function DetailProduk2({ route, navigation }) {
         {/* DETAIL PRODUK */}
         <View style={styles.detailsCard}>
           <Text style={styles.productName}>{product.name}</Text>
-          <Text style={styles.productPrice}>{product.price}</Text>
+          <Text style={styles.productPrice}>Rp {Number(product.price).toLocaleString('id-ID')}</Text>
 
           <Text style={styles.productDescription}>
             Ini adalah deskripsi detail dari produk: {product.name}. 
@@ -295,6 +329,7 @@ function DetailProduk2({ route, navigation }) {
         onClose={() => setModalVisible(false)}
         onAddToCart={handleConfirmSelection}
         actionType={modalAction}
+        maxStock={product.stock}
       />
 
       {/* MODAL UNTUK MENULIS ULASAN */}
@@ -358,6 +393,38 @@ function DetailProduk2({ route, navigation }) {
             <TouchableOpacity style={styles.submitButton} onPress={handleReviewSubmit}>
               <Text style={styles.submitButtonText}>Kirim Ulasan</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL NOTIFIKASI TAMBAH KERANJANG */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isCartNotifVisible}
+        onRequestClose={() => setCartNotifVisible(false)}
+      >
+        <View style={styles.notifOverlay}>
+          <View style={styles.notifContent}>
+            <Ionicons name="checkmark-circle" size={50} color="#28A745" />
+            <Text style={styles.notifTitle}>Berhasil!</Text>
+            <Text style={styles.notifMessage}>Produk telah ditambahkan ke keranjang</Text>
+
+            <View style={styles.notifButtonContainer}>
+              <TouchableOpacity
+                style={styles.notifSecondaryButton}
+                onPress={() => setCartNotifVisible(false)}
+              >
+                <Text style={styles.notifSecondaryButtonText}>Lanjut Belanja</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.notifPrimaryButton}
+                onPress={handleGoToCart}
+              >
+                <Text style={styles.notifPrimaryButtonText}>Lihat Keranjang</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -671,7 +738,56 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 12,
   },
-
+  // Style Notifikasi
+  notifOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 30,
+  },
+  notifContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 25,
+    width: '100%',
+    alignItems: 'center',
+  },
+  notifTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#0D1B2A',
+    marginTop: 10,
+  },
+  notifMessage: {
+    fontSize: 14,
+    color: '#555',
+    textAlign: 'center',
+    marginVertical: 15,
+  },
+  notifButtonContainer: {
+    flexDirection: 'row',
+    width: '100%',
+  },
+  notifSecondaryButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#0D1B2A',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginRight: 5,
+  },
+  notifSecondaryButtonText: { color: '#0D1B2A', fontWeight: 'bold' },
+  notifPrimaryButton: {
+    flex: 1,
+    backgroundColor: '#0D1B2A',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginLeft: 5,
+  },
+  notifPrimaryButtonText: { color: '#fff', fontWeight: 'bold' },
 });
 
 export default DetailProduk2;
